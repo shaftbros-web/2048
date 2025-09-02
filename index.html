@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
-<title>CONQUEST 2048 — 和テイスト 6×6（v1.1, drag fix）</title>
+<title>CONQUEST 2048 — 和テイスト 6×6（v1.2, path-merge）</title>
 <style>
   :root{
     --bg:#f7f3e8;
@@ -24,6 +24,7 @@
   }
   *{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
   html,body{ height:100%; margin:0; background:var(--bg); color:var(--ink); font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", Meiryo, sans-serif; }
+  /* 和紙っぽいテクスチャ */
   body::before{
     content:""; position:fixed; inset:0; pointer-events:none; opacity:.25;
     background:
@@ -32,38 +33,47 @@
       radial-gradient(14px 14px at 40% 80%, #000 1px, transparent 2px);
     mix-blend-mode: multiply;
   }
+
   #wrap{ display:grid; grid-template-rows:auto auto 1fr auto; height:100%; max-width:840px; margin:0 auto; }
   header{ padding:10px 14px; display:flex; align-items:center; gap:10px; justify-content:space-between; }
   header h1{ font-size:18px; margin:0; letter-spacing:.05em; font-weight:700; }
   header .badge{ padding:4px 8px; border:1px solid var(--ink); border-radius:999px; font-size:12px; }
+
   #hud{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; padding:8px 12px; }
   .panel{ background:var(--panel); border:1px solid #00000018; border-radius:16px; padding:8px 10px; box-shadow: 0 2px 10px #0000000f; }
   .stat{ display:flex; align-items:center; justify-content:space-between; font-weight:700; }
   .stat small{ font-weight:600; color:var(--muted); }
+
   #grid-wrap{ padding:8px 12px 14px; }
   #grid{ width:100%; aspect-ratio:1 / 1; background:#faf7f0; border:2px solid var(--ink); border-radius:18px; padding:8px; display:grid; grid-template-columns: repeat(6, 1fr); grid-template-rows: repeat(6, 1fr); gap:6px; touch-action:none; }
   .cell{ position:relative; background:#ffffff; border:1px solid var(--grid); border-radius:12px; overflow:hidden; display:flex; align-items:center; justify-content:center; }
-  .cell.ink{ background: #fff8e6; border-color:#e6d7b9; box-shadow: inset 0 0 0 2px #e9d8a6; }
-  .cell.wall{ background: repeating-linear-gradient(45deg, #bdafa2, #bdafa2 6px, #ad9f92 6px, #ad9f92 12px); border-color:#7b6d61; }
+  .cell.ink{ background:#fff8e6; border-color:#e6d7b9; box-shadow: inset 0 0 0 2px #e9d8a6; }
+  .cell.wall{ background:repeating-linear-gradient(45deg, #bdafa2, #bdafa2 6px, #ad9f92 6px, #ad9f92 12px); border-color:#7b6d61; }
   .cell.flag::after{ content:"⚑"; position:absolute; top:4px; right:6px; font-size:16px; filter: drop-shadow(0 1px 0 #fff); }
-  .cell.valid{ outline:2px dashed var(--accent); outline-offset:-4px; }  /* for paint/drag hint */
+  .cell.valid{ outline:2px dashed var(--accent); outline-offset:-4px; }       /* 渦塗り置ける場所 */
+  .cell.target{ outline:3px solid var(--accent-2); outline-offset:-3px; }    /* 合体可能ターゲット */
+
   .tile{ position:absolute; inset:4px; background:var(--tile); border:1px solid #00000015; border-radius:10px; display:flex; align-items:center; justify-content:center;
          font-weight:800; font-size: clamp(16px, 5vw, 26px); color:var(--tile-text); box-shadow: 0 2px 6px #0000001a; }
   .tile.v2{ background:var(--tile-2); }
   .tile.v4{ background:var(--tile-4); }
   .tile.merge{ animation: pop .2s ease-out; }
   @keyframes pop{ from{ transform:scale(.9); } to{ transform:scale(1); } }
+
   #controls{ display:flex; gap:8px; padding:0 12px 12px; }
   button{ flex:1; padding:12px 10px; border-radius:14px; border:1px solid #00000020; background:#fff; font-weight:800; font-size:14px; }
   button.primary{ background: linear-gradient(#fff, #f9f5ec); border-color:#00000025; }
   button.ok{ background:#e8f7f1; border-color:#9ee2c9; }
   button:disabled{ opacity:.55; filter:grayscale(.1); }
+
+  /* モーダル */
   .modal{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:#00000066; backdrop-filter: blur(2px); padding:16px; }
   .modal.show{ display:flex; }
   .card{ background:#fff; border-radius:18px; border:1px solid #00000022; box-shadow: 0 12px 40px #00000033; padding:16px; max-width:520px; width:100%; }
   .card h2{ margin:0 0 8px; font-size:22px; }
   .stars{ font-size:24px; letter-spacing:3px; margin:6px 0 10px; }
   .tips{ color:var(--muted); font-size:14px; line-height:1.6; }
+
   .shake{ animation: shake .14s ease-in-out 0s 2; }
   @keyframes shake{ 0%{ transform:translateX(0) } 50%{ transform:translateX(-4px) } 100%{ transform:translateX(4px) } }
 </style>
@@ -74,14 +84,17 @@
     <h1>CONQUEST 2048 <span class="badge">6×6</span></h1>
     <div class="badge" id="levelBadge">面 1 / 10</div>
   </header>
+
   <section id="hud">
     <div class="panel stat"><span>手数</span><span><b id="moves">30</b> / 30</span></div>
     <div class="panel stat"><span>SP</span><span><b id="sp">0</b> / 100</span></div>
     <div class="panel stat"><span>旗</span><span><b id="flags">0</b> / 3</span></div>
   </section>
+
   <section id="grid-wrap">
     <div id="grid" aria-label="6x6 board"></div>
   </section>
+
   <div id="controls">
     <button class="primary" id="paint1">渦塗り 1段 (-20SP)</button>
     <button class="primary" id="paint2">渦塗り 2段 (-40SP)</button>
@@ -89,6 +102,8 @@
     <button id="restartBtn">リスタート</button>
   </div>
 </div>
+
+<!-- クリア/失敗モーダル -->
 <div class="modal" id="endModal" role="dialog" aria-modal="true">
   <div class="card">
     <h2 id="endTitle">クリア！</h2>
@@ -100,15 +115,18 @@
     </div>
   </div>
 </div>
+
+<!-- チュートリアル（更新） -->
 <div id="tutor" class="modal">
   <div class="card">
     <h2>あそびかた</h2>
     <ol style="margin:0 0 10px 20px; line-height:1.6;">
-      <li>同じ数字のタイル同士を <b>一直線にドラッグ</b>で合体（間は空白のみOK）</li>
-      <li>合体すると <b>+10SP</b>。SPを消費して <b>渦塗り</b>を発動（1段20SP / 2段40SP）</li>
-      <li>渦塗りは <b>自色セルの隣</b>にだけ置けます。2段は <b>壁も破壊</b>！</li>
-      <li><b>旗⚑を3つ</b> 自色にすればクリア。手数は <b>30手</b> です。</li>
-      <li>合体できず、かつ SP&lt;20 のときは <b>失敗</b>になります。</li>
+      <li>同じ数字のタイルを <b>タップ→別の同値タイルをタップ</b> で合体。<br>
+          もしくはドラッグして離してもOK。</li>
+      <li><b>直線でなくても可</b>。<b>壁とタイルを避けて</b> <b>空白セルだけで繋がる道</b>があれば合体できます（上下左右移動）。</li>
+      <li>合体すると <b>+10SP</b>。SPを使って <b>渦塗り</b>（1段20SP / 2段40SP、2段は壁破壊）。</li>
+      <li>渦塗りは <b>自色セルに隣接</b>にのみ設置。</li>
+      <li><b>旗⚑3つ</b>を自色にするとクリア。手数は <b>30手</b>。合体不可かつSP&lt;20で失敗。</li>
     </ol>
     <div style="display:flex; gap:8px; margin-top:8px;">
       <button class="primary" id="tutorOk">はじめる</button>
@@ -116,11 +134,14 @@
     </div>
   </div>
 </div>
+
 <script>
 (function(){
   const SIZE = 6;
   const MOVES_MAX = 30;
   const SP_MAX = 100;
+
+  // ---- 固定10面 ----
   const LEVELS = [
     {walls:[[2,0],[3,1],[1,3],[4,4],[2,5]],flags:[[0,5],[5,0],[5,5]],seeds:[[0,0]],start:[[1,1,2],[4,2,2],[2,4,2]]},
     {walls:[[1,0],[2,1],[3,2],[2,3],[1,4],[0,5]],flags:[[0,0],[3,5],[5,2]],seeds:[[0,1]],start:[[5,1,2],[4,4,2],[2,2,2]]},
@@ -133,11 +154,13 @@
     {walls:[[2,0],[2,1],[2,2],[2,3],[3,2],[4,2],[1,3],[4,4]],flags:[[0,5],[3,0],[5,5]],seeds:[[0,0],[5,1]],start:[[1,2,2],[5,3,2],[0,4,2]]},
     {walls:[[0,3],[1,3],[2,3],[3,3],[4,3],[2,1],[3,1],[4,1]],flags:[[0,0],[5,5],[1,5]],seeds:[[0,2]],start:[[5,0,2],[2,5,2],[3,0,2]]}
   ];
+
+  // ---- 状態 ----
   let levelIndex = 0;
   let moves, sp;
   let tiles, floorInk, walls, flags, captured;
-  let placement = null;
-  let dragging = null;
+  let placement = null;              // 渦塗り {radius:1|2} or null
+  let selecting = null;              // 合体選択 {from, value, targets:Set}
   let hoverCell = null;
 
   const elGrid = document.getElementById('grid');
@@ -151,23 +174,27 @@
   const endStars = document.getElementById('endStars');
   const tutor = document.getElementById('tutor');
 
+  // ---- Util ----
   const idx = (x,y)=> y*SIZE + x;
   const XY = i => [i%SIZE, Math.floor(i/SIZE)];
   const inBounds = (x,y)=> x>=0 && x<SIZE && y>=0 && y<SIZE;
+  const neighbors = i => {
+    const [x,y]=XY(i);
+    const out=[];
+    if(x>0) out.push(idx(x-1,y));
+    if(x<SIZE-1) out.push(idx(x+1,y));
+    if(y>0) out.push(idx(x,y-1));
+    if(y<SIZE-1) out.push(idx(x,y+1));
+    return out;
+  };
 
-  function elementCellAt(clientX, clientY){
-    const el = document.elementFromPoint(clientX, clientY);
+  function elementCellAt(x,y){
+    const el = document.elementFromPoint(x,y);
     return el ? el.closest('.cell') : null;
   }
   function cellIdAtPoint(e){
     const c = elementCellAt(e.clientX, e.clientY);
     return c ? +c.dataset.id : null;
-  }
-  function canMerge(fromId, toId){
-    if(fromId===toId) return false;
-    if(!tiles.has(toId)) return false;
-    if(tiles.get(toId)!==tiles.get(fromId)) return false;
-    return lineClearBetween(fromId, toId);
   }
 
   function updateHUD(){
@@ -176,9 +203,28 @@
     elFlags.textContent = captured.size;
     elLevelBadge.textContent = `面 ${levelIndex+1} / ${LEVELS.length}`;
   }
+
   function applyInkAt(x,y){ if(inBounds(x,y)) floorInk.add(idx(x,y)); }
-  function ringCells(cx,cy,r){ const out=[]; for(let y=cy-r;y<=cy+r;y++){ for(let x=cx-r;x<=cx+r;x++){ if(!inBounds(x,y)) continue; if(Math.max(Math.abs(x-cx),Math.abs(y-cy))<=r) out.push([x,y]); }} return out; }
-  function canPlacePaintAt(cx,cy){ for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){ const x=cx+dx,y=cy+dy; if(inBounds(x,y)&&floorInk.has(idx(x,y))) return true; } return false; }
+
+  function ringCells(cx,cy,r){
+    const out=[];
+    for(let y=cy-r;y<=cy+r;y++){
+      for(let x=cx-r;x<=cx+r;x++){
+        if(!inBounds(x,y)) continue;
+        if(Math.max(Math.abs(x-cx),Math.abs(y-cy))<=r) out.push([x,y]);
+      }
+    }
+    return out;
+  }
+
+  function canPlacePaintAt(cx,cy){
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const x=cx+dx, y=cy+dy;
+      if(inBounds(x,y) && floorInk.has(idx(x,y))) return true;
+    }
+    return false;
+  }
+
   function placePaint(cx,cy,radius){
     const cost = radius===1?20:40;
     if(sp<cost) return false;
@@ -186,84 +232,197 @@
     sp -= cost;
     for(const [x,y] of ringCells(cx,cy,radius)){
       const id = idx(x,y);
-      if(radius===2 && walls.has(id)) walls.delete(id);
+      if(radius===2 && walls.has(id)) walls.delete(id); // 壁破壊
       applyInkAt(x,y);
     }
     checkFlagsCapture(); render(); checkWinLose(); return true;
   }
-  function spawnTile(){
-    const empty=[]; for(let y=0;y<SIZE;y++){ for(let x=0;x<SIZE;x++){ const id=idx(x,y); if(walls.has(id)) continue; if(tiles.has(id)) continue; empty.push(id); }};
-    if(!empty.length) return false;
-    tiles.set(empty[Math.floor(Math.random()*empty.length)], 2); return true;
-  }
-  function lineClearBetween(a,b){
-    const [ax,ay]=XY(a), [bx,by]=XY(b);
-    if(ax!==bx && ay!==by) return false;
-    const dx=Math.sign(bx-ax), dy=Math.sign(by-ay);
-    for(let x=ax+dx,y=ay+dy; x!==bx||y!==by; x+=dx,y+=dy){
-      const id=idx(x,y);
-      if(walls.has(id) || tiles.has(id)) return false;
-    }
-    return true;
-  }
-  function anyMergePossible(){
-    const pos=[...tiles.keys()];
-    const byRow=new Map(), byCol=new Map();
-    for(const id of pos){
-      const [x,y]=XY(id), v=tiles.get(id);
-      const rk=`${y}:${v}`, ck=`${x}:${v}`;
-      (byRow.get(rk)||byRow.set(rk,[]).get(rk)).push(id);
-      (byCol.get(ck)||byCol.set(ck,[]).get(ck)).push(id);
-    }
-    const lists=[...byRow.values(),...byCol.values()];
-    for(const arr of lists){
-      arr.sort((a,b)=>a-b);
-      for(let i=0;i<arr.length;i++){ for(let j=i+1;j<arr.length;j++){ if(lineClearBetween(arr[i],arr[j])) return true; }}
+
+  // ---- パス合体ロジック ----
+  // 空白セル（壁・タイル以外）のみ通って start -> end が繋がるなら true（上下左右）
+  function hasPath(startId, endId){
+    if(startId===endId) return false;
+    const q=[startId];
+    const seen=new Set([startId]);
+    while(q.length){
+      const cur=q.shift();
+      for(const nb of neighbors(cur)){
+        if(nb===endId) return true; // 目標タイルの位置に隣接すれば到達扱い
+        if(seen.has(nb)) continue;
+        // 通行可能：壁なし・タイルなし
+        if(!walls.has(nb) && !tiles.has(nb)){
+          seen.add(nb); q.push(nb);
+        }
+      }
     }
     return false;
   }
-  function checkFlagsCapture(){ for(const f of flags){ if(floorInk.has(f)) captured.add(f); } }
+
+  // start と同値で、かつ hasPath(start, t) が true のタイル群
+  function reachableTargets(fromId){
+    const v = tiles.get(fromId);
+    const out=new Set();
+    for(const [tid,val] of tiles.entries()){
+      if(tid===fromId) continue;
+      if(val!==v) continue;
+      if(hasPath(fromId, tid)) out.add(tid);
+    }
+    return out;
+  }
+
+  function anyMergePossible(){
+    for(const fromId of tiles.keys()){
+      if(reachableTargets(fromId).size>0) return true;
+    }
+    return false;
+  }
+
+  function checkFlagsCapture(){
+    for(const f of flags){
+      if(floorInk.has(f)) captured.add(f);
+    }
+  }
+
   function checkWinLose(){
     if(captured.size===flags.size){
       const stars = moves>=10?3:(moves>=5?2:1);
-      endTitle.textContent="クリア！"; endStars.textContent="★ ".repeat(stars).trim();
-      endMsg.textContent=`残り手数 ${moves}。渦塗りで旗を3つ制圧しました！`; endModal.classList.add('show'); return;
+      endTitle.textContent = "クリア！";
+      endStars.textContent = "★ ".repeat(stars).trim();
+      endMsg.textContent = `残り手数 ${moves}。渦塗りで旗を3つ制圧しました！`;
+      endModal.classList.add('show');
+      return;
     }
-    if(moves<=0){ endTitle.textContent="失敗..."; endStars.textContent="★ ★ ★"; endMsg.textContent="手数が0になりました。もう一度挑戦！"; endModal.classList.add('show'); return; }
-    if(!anyMergePossible() && sp<20){ endTitle.textContent="失敗..."; endStars.textContent="★ ★ ★"; endMsg.textContent="合体可能タイルがなく、SPも不足しています。"; endModal.classList.add('show'); return; }
+    if(moves<=0){
+      endTitle.textContent = "失敗...";
+      endStars.textContent = "★ ★ ★";
+      endMsg.textContent = "手数が0になりました。もう一度挑戦！";
+      endModal.classList.add('show');
+      return;
+    }
+    if(!anyMergePossible() && sp<20){
+      endTitle.textContent = "失敗...";
+      endStars.textContent = "★ ★ ★";
+      endMsg.textContent = "合体可能タイルがなく、SPも不足しています。";
+      endModal.classList.add('show');
+      return;
+    }
   }
-  function cellClass(id){ let cls="cell"; if(floorInk.has(id)) cls+=" ink"; if(walls.has(id)) cls+=" wall"; if(flags.has(id)) cls+=" flag"; return cls; }
+
+  function cellClass(id){
+    let cls="cell";
+    if(floorInk.has(id)) cls+=" ink";
+    if(walls.has(id)) cls+=" wall";
+    if(flags.has(id)) cls+=" flag";
+    return cls;
+  }
+
   function render(){
     elGrid.innerHTML="";
-    for(let y=0;y<SIZE;y++){ for(let x=0;x<SIZE;x++){ const id=idx(x,y); const cell=document.createElement('div'); cell.className=cellClass(id); cell.dataset.id=id;
-      if(tiles.has(id)){ const v=tiles.get(id); const t=document.createElement('div'); t.className="tile v"+v; t.textContent=v; cell.appendChild(t); }
-      elGrid.appendChild(cell); }}
+    for(let y=0;y<SIZE;y++){
+      for(let x=0;x<SIZE;x++){
+        const id=idx(x,y);
+        const cell=document.createElement('div');
+        cell.className=cellClass(id);
+        cell.dataset.id=id;
+        if(tiles.has(id)){
+          const v=tiles.get(id);
+          const t=document.createElement('div');
+          t.className="tile v"+v;
+          t.textContent=v;
+          cell.appendChild(t);
+        }
+        elGrid.appendChild(cell);
+      }
+    }
+    // 合体ターゲットの可視化
+    if(selecting && selecting.targets){
+      for(const tid of selecting.targets){
+        const el=[...elGrid.children][tid];
+        if(el) el.classList.add('target');
+      }
+    }
+    // 渦塗り設置可視化
+    if(placement){
+      for(const c of elGrid.querySelectorAll('.cell')){
+        const id = +c.dataset.id;
+        const [cx,cy] = XY(id);
+        if(canPlacePaintAt(cx,cy)) c.classList.add('valid');
+      }
+    }
     updateHUD();
-    if(placement){ for(const c of elGrid.querySelectorAll('.cell')){ const id = +c.dataset.id; const [cx,cy]=XY(id); if(canPlacePaintAt(cx,cy)) c.classList.add('valid'); }}
   }
 
   function initLevel(i){
-    levelIndex=i; const L=LEVELS[i];
-    moves=MOVES_MAX; sp=0;
-    tiles=new Map(); floorInk=new Set();
-    walls=new Set(L.walls.map(([x,y])=>idx(x,y)));
-    flags=new Set(L.flags.map(([x,y])=>idx(x,y)));
-    captured=new Set(); placement=null; dragging=null; hoverCell=null;
+    levelIndex=i;
+    const L=LEVELS[i];
+    moves = MOVES_MAX; sp=0;
+    tiles = new Map();
+    floorInk = new Set();
+    walls = new Set(L.walls.map(([x,y])=>idx(x,y)));
+    flags = new Set(L.flags.map(([x,y])=>idx(x,y)));
+    captured = new Set();
+    placement = null; selecting = null; hoverCell=null;
+
     for(const [x,y] of L.seeds) applyInkAt(x,y);
-    for(const [x,y,v] of L.start) tiles.set(idx(x,y),v);
-    checkFlagsCapture(); render();
+    for(const [x,y,v] of L.start) tiles.set(idx(x,y), v);
+    checkFlagsCapture();
+    render();
   }
 
-  // ---- Improved drag handling ----
+  // ---- 入力（2タップ & ドラッグ両対応のパス合体） ----
   function clearHover(){
-    if(hoverCell){ hoverCell.classList.remove('valid'); hoverCell=null; }
+    if(hoverCell){ hoverCell.classList.remove('target'); hoverCell=null; }
   }
+  function startSelecting(id){
+    if(!tiles.has(id)) return false;
+    selecting = { from:id, value: tiles.get(id), targets: reachableTargets(id) };
+    if(selecting.targets.size===0){
+      // そのタイルからは合体不可
+      elGrid.classList.add('shake'); setTimeout(()=>elGrid.classList.remove('shake'),160);
+    }
+    render();
+    return true;
+  }
+  function tryMerge(toId){
+    if(!selecting) return false;
+    if(!selecting.targets.has(toId)) return false;
+    const fromId = selecting.from;
+    const v = selecting.value;
+    tiles.delete(fromId);
+    tiles.set(toId, v*2);
+    moves--; sp = Math.min(SP_MAX, sp+10);
+    spawnTile();
+    selecting = null;
+    render();
+    checkWinLose();
+    return true;
+  }
+
+  function spawnTile(){
+    const empty=[];
+    for(let y=0;y<SIZE;y++){
+      for(let x=0;x<SIZE;x++){
+        const id=idx(x,y);
+        if(walls.has(id)) continue;
+        if(tiles.has(id)) continue;
+        empty.push(id);
+      }
+    }
+    if(!empty.length) return false;
+    const id = empty[Math.floor(Math.random()*empty.length)];
+    tiles.set(id, 2);
+    return true;
+  }
+
+  // Pointer handlers
   elGrid.addEventListener('pointerdown', e=>{
     e.preventDefault();
     const c = e.target.closest('.cell');
     if(!c) return;
     elGrid.setPointerCapture && elGrid.setPointerCapture(e.pointerId);
     const id = +c.dataset.id;
+
+    // 渦塗り中なら配置判定
     if(placement){
       const [cx,cy] = XY(id);
       const ok = placePaint(cx,cy, placement.radius);
@@ -271,52 +430,53 @@
       else { placement=null; render(); }
       return;
     }
-    if(!tiles.has(id)) return;
-    dragging = { from:id, value: tiles.get(id) };
-    clearHover();
-  });
-  elGrid.addEventListener('pointermove', e=>{
-    if(!dragging) return;
-    e.preventDefault();
-    const overId = cellIdAtPoint(e);
-    clearHover();
-    if(overId==null) return;
-    const cellEl = [...elGrid.children][overId];
-    if(canMerge(dragging.from, overId)){
-      hoverCell = cellEl;
-      hoverCell.classList.add('valid'); // dashed outline
+
+    // 2タップ：すでに選択中で、タップ先がターゲットなら即合体
+    if(selecting && selecting.targets.has(id)){
+      tryMerge(id);
+      return;
     }
-  });
-  elGrid.addEventListener('pointerup', e=>{
-    e.preventDefault();
-    if(!dragging){ clearHover(); return; }
-    const start = dragging.from, fromV = dragging.value;
-    const endId = cellIdAtPoint(e); // use coordinate, not event target
-    const doMerge = endId!=null && canMerge(start, endId);
-    clearHover();
-    dragging=null;
-    if(!doMerge){ elGrid.classList.add('shake'); setTimeout(()=>elGrid.classList.remove('shake'),160); return; }
-    // merge
-    tiles.delete(start);
-    tiles.set(endId, fromV*2);
-    const cellEl = [...elGrid.children][endId];
-    const tileEl = cellEl && cellEl.querySelector('.tile');
-    if(tileEl){ tileEl.classList.add('merge'); }
-    moves--; sp = Math.min(SP_MAX, sp+10);
-    spawnTile(); render(); checkWinLose();
+
+    // 新規選択
+    startSelecting(id);
   });
 
-  // Controls
+  elGrid.addEventListener('pointermove', e=>{
+    // ドラッグサポート：指の下のセルがターゲットならハイライト
+    if(!selecting) return;
+    const overId = cellIdAtPoint(e);
+    clearHover();
+    if(overId!=null && selecting.targets.has(overId)){
+      hoverCell = [...elGrid.children][overId];
+      if(hoverCell) hoverCell.classList.add('target');
+    }
+  });
+
+  elGrid.addEventListener('pointerup', e=>{
+    if(!selecting) return;
+    const endId = cellIdAtPoint(e);
+    if(endId!=null && selecting.targets.has(endId)){
+      tryMerge(endId);
+    } // ターゲット外で離したら選択は維持（2タップ想定）
+  });
+
+  // ---- Controls ----
   document.getElementById('paint1').addEventListener('click', ()=>{ placement={radius:1}; render(); });
   document.getElementById('paint2').addEventListener('click', ()=>{ placement={radius:2}; render(); });
   document.getElementById('passBtn').addEventListener('click', ()=>{ moves--; render(); checkWinLose(); });
   document.getElementById('restartBtn').addEventListener('click', ()=>{ initLevel(levelIndex); });
+
   document.getElementById('nextBtn').addEventListener('click', ()=>{ endModal.classList.remove('show'); initLevel(Math.min(levelIndex+1, LEVELS.length-1)); });
   document.getElementById('retryBtn').addEventListener('click', ()=>{ endModal.classList.remove('show'); initLevel(levelIndex); });
+
+  // チュートリアル（初回のみ）
   const seenTutor = localStorage.getItem('conquest_tutor_seen') === '1';
   document.getElementById('tutorOk').addEventListener('click', ()=>{ tutor.classList.remove('show'); localStorage.setItem('conquest_tutor_seen','1'); });
   document.getElementById('tutorSkip').addEventListener('click', ()=>{ tutor.classList.remove('show'); });
-  initLevel(0); if(!seenTutor){ tutor.classList.add('show'); }
+
+  // start
+  initLevel(0);
+  if(!seenTutor){ tutor.classList.add('show'); }
 })();
 </script>
 </body>
